@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>听见画面·看见声音 | AI残障感官代偿创作工具包</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --accent: #F59E0B;
+            --text-dark: #1F2937;
+            --text-light: #6B7280;
+            --bg-light: #F9FAFB;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --gradient-3: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-dark);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(255,255,255,0.15) 0%, transparent 40%);
+            animation: float 20s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(-10%, -10%); }
+            50% { transform: translate(10%, 10%); }
+        }
+
+        .hero-content {
+            text-align: center;
+            color: white;
+            z-index: 1;
+            padding: 2rem;
+            max-width: 900px;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            padding: 0.5rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255,255,255,0.3);
+            animation: fadeInUp 1s ease-out 0.2s both;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 8vw, 5rem);
+            font-weight: 900;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            animation: fadeInUp 1s ease-out 0.3s both;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            font-weight: 300;
+            opacity: 0.95;
+            margin-bottom: 3rem;
+            animation: fadeInUp 1s ease-out 0.4s both;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            flex-wrap: wrap;
+            margin-top: 3rem;
+            animation: fadeInUp 1s ease-out 0.6s both;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 900;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* Sections */
+        .section {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .section-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            margin-bottom: 3rem;
+            max-width: 600px;
+        }
+
+        /* Problem Section */
+        .problem-section {
+            background: var(--bg-light);
+        }
+
+        .problem-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .problem-card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .problem-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.1);
+        }
+
+        .problem-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .icon-visual { background: linear-gradient(135deg, #667eea, #764ba2); }
+        .icon-hearing { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+        .icon-motor { background: linear-gradient(135deg, #f093fb, #f5576c); }
+
+        .problem-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .problem-card p {
+            color: var(--text-light);
+            line-height: 1.7;
+        }
+
+        /* Solution Section */
+        .solution-section {
+            background: white;
+        }
+
+        .solution-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 4rem;
+            margin-top: 3rem;
+        }
+
+        .flow-item {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .flow-item:nth-child(even) {
+            direction: rtl;
+        }
+
+        .flow-item:nth-child(even) > * {
+            direction: ltr;
+        }
+
+        .flow-content h3 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: var(--text-dark);
+        }
+
+        .flow-content p {
+            color: var(--text-light);
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .flow-visual {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            height: 300px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .flow-visual::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.3) 50%, transparent 70%);
+            animation: shimmer 3s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* Value Section */
+        .value-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .value-section .section-title,
+        .value-section .section-subtitle {
+            color: white;
+        }
+
+        .value-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .value-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 2.5rem;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .value-card:hover {
+            transform: scale(1.02);
+        }
+
+        .value-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .value-card p {
+            opacity: 0.9;
+            line-height: 1.7;
+        }
+
+        .value-card ul {
+            margin-top: 1rem;
+            padding-left: 1.2rem;
+        }
+
+        .value-card li {
+            margin-bottom: 0.5rem;
+            opacity: 0.9;
+        }
+
+        /* Target Section */
+        .target-section {
+            background: white;
+        }
+
+        .target-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .target-card {
+            border-left: 4px solid var(--primary);
+            padding-left: 2rem;
+        }
+
+        .target-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .target-card ul {
+            list-style: none;
+        }
+
+        .target-card li {
+            padding: 0.8rem 0;
+            border-bottom: 1px solid #E5E7EB;
+            color: var(--text-light);
+        }
+
+        .target-card li:last-child {
+            border-bottom: none;
+        }
+
+        .target-card li::before {
+            content: '→';
+            margin-right: 0.8rem;
+            color: var(--primary);
+        }
+
+        /* CTA Section */
+        .cta-section {
+            background: var(--bg-light);
+            text-align: center;
+            padding: 8rem 2rem;
+        }
+
+        .cta-title {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .cta-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            margin-bottom: 3rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--gradient-1);
+            color: white;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--text-dark);
+            color: white;
+            text-align: center;
+            padding: 3rem 2rem;
+        }
+
+        footer p {
+            opacity: 0.7;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .flow-item {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+
+            .flow-item:nth-child(even) {
+                direction: ltr;
+            }
+
+            .hero-stats {
+                gap: 2rem;
+            }
+
+            .stat-number {
+                font-size: 2.5rem;
+            }
+
+            .section {
+                padding: 4rem 1.5rem;
+            }
+        }
+
+        /* Scroll animations */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">社会服务赛道 · 数字无障碍</div>
+            <h1>听见画面·看见声音</h1>
+            <p class="hero-subtitle">AI 残障感官代偿创作工具包</p>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="stat-number">8500万</span>
+                    <span class="stat-label">残障人士受益</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">100%</span>
+                    <span class="stat-label">语音操控</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">0门槛</span>
+                    <span class="stat-label">独立创作</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section class="section problem-section">
+        <h2 class="section-title fade-in">打破感官壁垒</h2>
+        <p class="section-subtitle fade-in">当创作工具只为健全人设计，残障创作者如何参与 AIGC 浪潮？</p>
+        
+        <div class="problem-grid">
+            <div class="problem-card fade-in">
+                <div class="problem-icon icon-visual">👁️</div>
+                <h3>视障创作者</h3>
+                <p>生成图片后无法查看画面内容，读屏软件只能识别文字。构图、色彩、光影、人物细节——创作全程依赖明眼人协助，失去创作自主权。</p>
+            </div>
+            
+            <div class="problem-card fade-in">
+                <div class="problem-icon icon-hearing">👂</div>
+                <h3>听障创作者</h3>
+                <p>剪辑视频时听不到背景音乐和配音节奏，无法卡点、对齐字幕。想做短视频自媒体，却因音频感知障碍难以产出高质量内容。</p>
+            </div>
+            
+            <div class="problem-card fade-in">
+                <div class="problem-icon icon-motor">🤲</div>
+                <h3>肢障创作者</h3>
+                <p>手部无力或震颤，无法完成绘图/剪辑软件中的复杂拖拽、点击操作。鼠标移动图层、滑动时间轴——这些对健全人简单的操作，对他们却是难以逾越的障碍。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section class="section solution-section">
+        <h2 class="section-title fade-in">多模态感官代偿</h2>
+        <p class="section-subtitle fade-in">用听觉替代视觉，用可视化替代音频，用语音替代精细操作</p>
+        
+        <div class="solution-flow">
+            <div class="flow-item fade-in">
+                <div class="flow-content">
+                    <h3>🎤 语音生成创作</h3>
+                    <p>视障用户仅凭语音就能独立完成文生图创作。口述创意想法，AI 自动生成画面，无需任何视觉操作或精细手部动作。</p>
+                </div>
+                <div class="flow-visual">🗣️</div>
+            </div>
+            
+            <div class="flow-item fade-in">
+                <div class="flow-content">
+                    <h3>🔊 听觉画面解析</h3>
+                    <p>AI 将图片内容转化为详细的语音描述，解析构图、色彩、光影、人物表情等视觉元素，让视障用户"听见"画面。</p>
+                </div>
+                <div class="flow-visual">🎧</div>
+            </div>
+            
+            <div class="flow-item fade-in">
+                <div class="flow-content">
+                    <h3>✏️ 语音修改闭环</h3>
+                    <p>听到画面描述后，用户可通过语音指令修改画面："把背景换成森林"、"让人物微笑"——全程无需视觉确认。</p>
+                </div>
+                <div class="flow-visual">💬</div>
+            </div>
+            
+            <div class="flow-item fade-in">
+                <div class="flow-content">
+                    <h3>📊 音频可视化</h3>
+                    <p>听障创作者可以看到音频的波形图、节奏可视化图形，直观感知音乐节拍和配音节奏，精准卡点剪辑视频。</p>
+                </div>
+                <div class="flow-visual">📈</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Value Section -->
+    <section class="section value-section">
+        <h2 class="section-title fade-in">价值与意义</h2>
+        <p class="section-subtitle fade-in">跳出传统"帮扶救助"思路，赋予残障人群独立创作、自主创收的能力</p>
+        
+        <div class="value-grid">
+            <div class="value-card fade-in">
+                <h3>🌟 社会价值</h3>
+                <p>消除数字创作中的感官壁垒，保障残障创作者的自主权与尊严。</p>
+                <ul>
+                    <li>解决创作全程依赖他人协助的痛点</li>
+                    <li>降低数字文创创业门槛</li>
+                    <li>拓宽残疾人居家灵活就业渠道</li>
+                    <li>响应国家《促进残疾人就业三年行动方案》</li>
+                    <li>填补国内残障专属 AI 创作工具空白</li>
+                </ul>
+            </div>
+            
+            <div class="value-card fade-in">
+                <h3>💰 商业价值</h3>
+                <p>可持续变现路径，公益与商业双轮驱动。</p>
+                <ul>
+                    <li><strong>B端稳定收入：</strong>特教学校、残联年度批量账号部署</li>
+                    <li><strong>C端分层会员：</strong>免费基础功能坚守公益底线</li>
+                    <li><strong>文创交易分成：</strong>残障创作者接单平台抽取服务费</li>
+                    <li><strong>企业定制：</strong>无障碍公益宣传物料制作</li>
+                </ul>
+            </div>
+            
+            <div class="value-card fade-in">
+                <h3>⚡ 效率提升</h3>
+                <p>从"完全无法独立创作"到"全程自主完成"。</p>
+                <ul>
+                    <li>口述生成 → 听觉查看 → 语音修改</li>
+                    <li>创作依赖他人的时间成本降至零</li>
+                    <li>残障群体平等参与 AIGC 数字创作浪潮</li>
+                    <li>打通数字创作到实体售卖的完整产业链</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Target Section -->
+    <section class="section target-section">
+        <h2 class="section-title fade-in">目标用户</h2>
+        <p class="section-subtitle fade-in">精准服务残障创作者与助残机构</p>
+        
+        <div class="target-grid">
+            <div class="target-card fade-in">
+                <h3>核心 C 端用户</h3>
+                <ul>
+                    <li>8500万残障群体中热爱绘画的创作者</li>
+                    <li>想做短视频自媒体的听障青年</li>
+                    <li>有文创设计需求的肢障人士</li>
+                    <li>因感官障碍无法独立使用现有工具的年轻创作者</li>
+                </ul>
+            </div>
+            
+            <div class="target-card fade-in">
+                <h3>B 端机构用户</h3>
+                <ul>
+                    <li>全国特殊教育学校</li>
+                    <li>各地残联组织</li>
+                    <li>公益基金会</li>
+                    <li>企业 CSR 宣传部门</li>
+                    <li>文旅展馆等有数字化助残采购需求的机构</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <h2 class="cta-title fade-in">让每个人都能创作</h2>
+        <p class="cta-subtitle fade-in">一款基于 TRAE IDE 搭建的轻量化网页应用，浏览器直接打开即可使用，无需安装客户端</p>
+        <div class="cta-buttons fade-in">
+            <a href="#" class="btn btn-primary">立即体验</a>
+            <a href="#" class="btn btn-secondary">了解更多</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>听见画面·看见声音 | AI 残障感官代偿创作工具包</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem;">社会服务赛道 · 数字无障碍创新项目</p>
+    </footer>
+
+    <script>
+        // Scroll animation
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.fade-in').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,13 +1,12 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useAccessibility } from '../contexts/AccessibilityContext'
 import {
-  createSpeechRecognition,
   speak,
   stopSpeaking,
-  isSpeechRecognitionSupported,
   isSpeechSynthesisSupported,
 } from '../lib/speech'
-import { generateImage, describeImage, parseCommand } from '../lib/api'
+import { generateImage, describeImage, parseCommand, generateSubtitles } from '../lib/api'
+import { WavRecorder } from '../lib/wav-recorder'
 
 type CreationStep = 'input' | 'generating' | 'result' | 'describing' | 'modifying'
 
@@ -22,19 +21,20 @@ export default function CreatePage() {
   const [step, setStep] = useState<CreationStep>('input')
   const [prompt, setPrompt] = useState('')
   const [artwork, setArtwork] = useState<Artwork | null>(null)
-  const [isListening, setIsListening] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [error, setError] = useState('')
-  const [subtitle, setSubtitle] = useState('') // 字幕（听障用户用）
-  const recognitionRef = useRef<any>(null)
+  const [subtitle, setSubtitle] = useState('')
+  const [transcript, setTranscript] = useState('') // 实时识别文字
+  const [isRecognizing, setIsRecognizing] = useState(false)
 
-  const srSupported = isSpeechRecognitionSupported()
+  const wavRecorderRef = useRef<WavRecorder | null>(null)
   const ttsSupported = isSpeechSynthesisSupported()
 
   /** 语音播报 + 字幕同步 */
   const announce = useCallback(
     (text: string) => {
-      setSubtitle(text) // 字幕同步显示（听障用户）
+      setSubtitle(text)
       if (settings.voiceEnabled && ttsSupported) {
         setIsSpeaking(true)
         speak(text, {
@@ -46,62 +46,95 @@ export default function CreatePage() {
     [settings.voiceEnabled, settings.speechRate, ttsSupported]
   )
 
-  /** 开始语音输入 */
-  const startListening = useCallback(() => {
-    if (!srSupported) {
-      setError('当前浏览器不支持语音识别，请使用 Chrome 或 Edge 浏览器')
-      announce('当前浏览器不支持语音识别，请使用 Chrome 或 Edge 浏览器')
+  /** 开始录音 */
+  const startRecording = useCallback(async () => {
+    setError('')
+    setTranscript('')
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError('当前浏览器不支持录音功能，请使用 Chrome、Edge 或 Firefox 浏览器')
+      announce('当前浏览器不支持录音功能')
       return
     }
 
-    const recognition = createSpeechRecognition('zh-CN')
-    if (!recognition) return
+    try {
+      const recorder = new WavRecorder()
+      wavRecorderRef.current = recorder
+      await recorder.start()
 
-    recognitionRef.current = recognition
-    setIsListening(true)
-    setError('')
-    announce('正在聆听，请说出您的创意...')
+      setIsRecording(true)
+      announce('正在录音，请说出您的创意。再次点击按钮停止录音')
+    } catch (err: any) {
+      const errName = err?.name || ''
+      const errMsg = err?.message || ''
 
-    let finalText = ''
-    recognition.onresult = (event: any) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalText += transcript
-        } else {
-          interim += transcript
-        }
-      }
-      setPrompt(finalText + interim)
-    }
-
-    recognition.onerror = (event: any) => {
-      setIsListening(false)
-      if (event.error === 'no-speech') {
-        announce('未听清，请再说一次')
-      } else if (event.error === 'not-allowed') {
-        announce('请允许麦克风权限')
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setError('麦克风权限被拒绝。请在浏览器地址栏左侧点击锁形图标，将麦克风权限改为"允许"，然后刷新页面重试')
+      } else if (errName === 'NotFoundError') {
+        setError('未检测到麦克风设备，请检查麦克风是否已连接')
+      } else if (errName === 'NotReadableError') {
+        setError('麦克风被其他程序占用，请关闭其他使用麦克风的程序后重试')
+      } else if (errName === 'SecurityError') {
+        setError('安全限制：需要通过 HTTPS 访问页面才能使用麦克风')
       } else {
-        announce('语音识别出错，请重试')
+        setError(`麦克风访问失败：${errName || errMsg || '未知错误'}。请刷新页面重试`)
       }
+      announce('麦克风访问失败，请检查权限设置')
+    }
+  }, [announce])
+
+  /** 停止录音并识别 */
+  const stopRecording = useCallback(async () => {
+    const recorder = wavRecorderRef.current
+    if (!recorder || !recorder.recording) {
+      setIsRecording(false)
+      return
     }
 
-    recognition.onend = () => {
-      setIsListening(false)
-      if (finalText) {
-        announce(`您说的是：${finalText}。确认生成请说"确认"，重新说请说"重试"`)
+    setIsRecording(false)
+    setIsRecognizing(true)
+
+    try {
+      const wavBlob = await recorder.stop()
+
+      if (wavBlob.size === 0) {
+        setError('录音为空，请重试')
+        setIsRecognizing(false)
+        return
       }
+
+      announce('正在识别语音...')
+
+      const arrayBuffer = await wavBlob.arrayBuffer()
+      const audioBase64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ''
+        )
+      )
+
+      const result = await generateSubtitles({
+        audioBase64,
+        fileName: 'voice-input.wav',
+      })
+
+      if (result.success && result.subtitles && result.subtitles.length > 0) {
+        const text = result.subtitles.map((s) => s.text).join('')
+        setTranscript(text)
+        setPrompt(text)
+        announce(`识别结果：${text}。确认生成请说"确认"，重新说请说"重试"`)
+      } else {
+        setError(result.error || '未识别到语音内容，请重试')
+        announce('未识别到语音内容，请重试')
+      }
+    } catch (err) {
+      console.error('语音识别失败:', err)
+      setError('语音识别失败，请重试')
+      announce('语音识别失败，请重试')
+    } finally {
+      setIsRecognizing(false)
     }
-
-    recognition.start()
-  }, [srSupported, announce])
-
-  /** 停止语音输入 */
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop()
-    setIsListening(false)
-  }, [])
+  }, [announce])
 
   /** 生成图片 */
   const handleGenerate = async () => {
@@ -124,7 +157,7 @@ export default function CreatePage() {
 
     setArtwork({ url: result.imageUrl, prompt: prompt.trim() })
     setStep('result')
-    announce('图片已生成。要听画面描述，请说"描述画面"或点击描述按钮')
+    announce('图片已生成。要听画面描述，请点击描述按钮')
   }
 
   /** 听觉画面解析 */
@@ -188,6 +221,16 @@ export default function CreatePage() {
     setIsSpeaking(false)
   }
 
+  useEffect(() => {
+    return () => {
+      const recorder = wavRecorderRef.current
+      if (recorder && recorder.recording) {
+        recorder.stop().catch(() => {})
+      }
+      stopSpeaking()
+    }
+  }, [])
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-gray-900">创作工作台</h1>
@@ -217,27 +260,34 @@ export default function CreatePage() {
             说出您的创意
           </h2>
 
-          {/* 语音输入按钮 */}
+          {/* 录音按钮 */}
           <div className="flex flex-col items-center gap-6 py-8">
             <button
-              onClick={isListening ? stopListening : startListening}
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isRecognizing}
               className={`touch-target w-32 h-32 rounded-full flex items-center justify-center text-5xl transition-all ${
-                isListening
+                isRecording
                   ? 'bg-red-500 text-white animate-pulse'
+                  : isRecognizing
+                  ? 'bg-gray-400 text-white cursor-wait'
                   : 'bg-primary text-white hover:bg-primary-dark shadow-lg hover:shadow-xl'
               }`}
-              aria-label={isListening ? '停止语音输入' : '开始语音输入，按住说话'}
-              aria-pressed={isListening}
+              aria-label={isRecording ? '停止录音' : '开始录音，说出您的创意'}
+              aria-pressed={isRecording}
             >
-              {isListening ? '⏹️' : '🎤'}
+              {isRecording ? '⏹️' : isRecognizing ? '⏳' : '🎤'}
             </button>
             <p className="text-gray-500 text-center">
-              {isListening ? '正在聆听...' : '点击按钮，说出您想画的画面'}
+              {isRecording
+                ? '正在录音... 再次点击按钮停止'
+                : isRecognizing
+                ? '正在识别语音...'
+                : '点击按钮，说出您想画的画面'}
             </p>
           </div>
 
           {/* 识别到的文字 */}
-          {prompt && (
+          {(prompt || transcript) && (
             <div className="bg-gray-50 rounded-xl p-6 space-y-4">
               <label htmlFor="prompt-text" className="block text-sm font-medium text-gray-700">
                 您的创意描述：
@@ -260,13 +310,6 @@ export default function CreatePage() {
               >
                 生成图片
               </button>
-            </div>
-          )}
-
-          {/* 浏览器兼容性提示 */}
-          {!srSupported && (
-            <div role="alert" className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4">
-              当前浏览器不支持语音识别。请使用 Chrome 或 Edge 浏览器，或在下方手动输入描述。
             </div>
           )}
         </section>

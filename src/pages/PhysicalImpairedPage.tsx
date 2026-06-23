@@ -6,14 +6,15 @@ import {
   isSpeechSynthesisSupported,
 } from '../lib/speech'
 import { generateImage, describeImage, parseCommand, generateSubtitles } from '../lib/api'
+import { WavRecorder } from '../lib/wav-recorder'
 
 /**
  * 肢障创作模块 — 全语音交互系统
  * 所有操作通过语音完成，无需精细手部操作
  * 简化界面：大按钮、单击操作、语音优先
  *
- * 语音识别方案：MediaRecorder 录音 → 上传后端 → 阿里云百炼 Paraformer 识别
- * 不依赖 Web Speech API（国内网络下 Chrome 的 Web Speech API 会报 network 错误）
+ * 语音识别方案：WavRecorder 录制 WAV → 上传后端 → 阿里云百炼 Paraformer 识别
+ * 用 WAV 格式确保阿里云百炼能正确识别（webm 格式百炼不支持）
  */
 
 type Mode = 'idle' | 'recording' | 'recognizing' | 'generating' | 'result' | 'describing'
@@ -46,9 +47,7 @@ export default function PhysicalImpairedPage() {
   const [error, setError] = useState('')
   const [commandLog, setCommandLog] = useState<string[]>([])
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
+  const wavRecorderRef = useRef<WavRecorder | null>(null)
   const ttsSupported = isSpeechSynthesisSupported()
 
   /** 语音播报 + 字幕 */
@@ -208,119 +207,33 @@ export default function PhysicalImpairedPage() {
     [artwork, announce]
   )
 
-  /** 开始录音 — 用 MediaRecorder 采集麦克风音频 */
+  /** 开始录音 — 用 WavRecorder 采集麦克风音频并编码为 WAV */
   const startRecording = useCallback(async () => {
     setError('')
     setTranscript('')
 
-    // 检查浏览器是否支持 MediaRecorder 和 getUserMedia
+    // 检查浏览器是否支持
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setError(
-        '当前浏览器不支持录音功能。请使用 Chrome、Edge 或 Firefox 浏览器，并通过 http://localhost:5173 访问（不要用 IP 地址访问）'
-      )
+      setError('当前浏览器不支持录音功能，请使用 Chrome、Edge 或 Firefox 浏览器')
       announce('当前浏览器不支持录音功能')
       return
     }
 
-    if (typeof MediaRecorder === 'undefined') {
-      setError('当前浏览器不支持 MediaRecorder，请使用最新版 Chrome 或 Edge')
-      return
-    }
-
     try {
-      // 请求麦克风权限
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      })
-      streamRef.current = stream
+      // 创建 WavRecorder 并开始录音
+      const recorder = new WavRecorder()
+      wavRecorderRef.current = recorder
+      await recorder.start()
 
-      // 选择浏览器支持的音频格式
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : ''
-
-      const mediaRecorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data)
-        }
-      }
-
-      mediaRecorder.onstop = async () => {
-        // 停止所有音轨，释放麦克风指示灯
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-
-        // 合并音频片段
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: mimeType || 'audio/webm',
-        })
-        if (audioBlob.size === 0) {
-          setError('录音为空，请重试')
-          setIsRecording(false)
-          return
-        }
-
-        // 上传到后端识别
-        setMode('recognizing')
-        announce('正在识别语音...')
-
-        try {
-          const arrayBuffer = await audioBlob.arrayBuffer()
-          const audioBase64 = btoa(
-            new Uint8Array(arrayBuffer).reduce(
-              (data, byte) => data + String.fromCharCode(byte),
-              ''
-            )
-          )
-
-          const result = await generateSubtitles({
-            audioBase64,
-            fileName: 'voice-command.webm',
-          })
-
-          if (result.success && result.subtitles && result.subtitles.length > 0) {
-            // 拼接所有字幕文字作为识别结果
-            const text = result.subtitles.map((s) => s.text).join('')
-            setTranscript(text)
-            // 先恢复 idle 状态，再执行指令（避免卡在 recognizing）
-            setMode('idle')
-            // 自动执行指令
-            executeCommand(text)
-          } else {
-            setError(result.error || '未识别到语音内容，请重试')
-            setMode('idle')
-          }
-        } catch (err) {
-          setError('语音识别失败，请重试')
-          setMode('idle')
-        }
-      }
-
-      mediaRecorder.start()
       setIsRecording(true)
       setMode('recording')
       announce('正在录音，请说出您的指令。再次点击按钮停止录音')
     } catch (err: any) {
-      // 根据错误类型给出明确的提示
       const errName = err?.name || ''
       const errMsg = err?.message || ''
 
       if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
-        setError(
-          '麦克风权限被拒绝。请在浏览器地址栏左侧点击锁形图标，将麦克风权限改为"允许"，然后刷新页面重试'
-        )
+        setError('麦克风权限被拒绝。请在浏览器地址栏左侧点击锁形图标，将麦克风权限改为"允许"，然后刷新页面重试')
       } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
         setError('未检测到麦克风设备，请检查麦克风是否已连接')
       } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
@@ -328,23 +241,66 @@ export default function PhysicalImpairedPage() {
       } else if (errName === 'OverconstrainedError') {
         setError('麦克风不满足约束条件，请检查设备')
       } else if (errName === 'SecurityError') {
-        setError(
-          '安全限制：请通过 http://localhost:5173 访问页面（不要用 IP 地址访问），或部署到 HTTPS 环境'
-        )
+        setError('安全限制：需要通过 HTTPS 访问页面才能使用麦克风')
       } else {
         setError(`麦克风访问失败：${errName || errMsg || '未知错误'}。请刷新页面重试`)
       }
       announce('麦克风访问失败，请检查权限设置')
     }
-  }, [announce, executeCommand])
+  }, [announce])
 
-  /** 停止录音 — 触发 onstop 回调进行识别 */
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
+  /** 停止录音 — 触发识别 */
+  const stopRecording = useCallback(async () => {
+    const recorder = wavRecorderRef.current
+    if (!recorder || !recorder.recording) {
+      setIsRecording(false)
+      return
     }
+
     setIsRecording(false)
-  }, [])
+
+    try {
+      // 停止录音，获取 WAV Blob
+      const wavBlob = await recorder.stop()
+
+      if (wavBlob.size === 0) {
+        setError('录音为空，请重试')
+        setMode('idle')
+        return
+      }
+
+      // 上传到后端识别
+      setMode('recognizing')
+      announce('正在识别语音...')
+
+      const arrayBuffer = await wavBlob.arrayBuffer()
+      const audioBase64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ''
+        )
+      )
+
+      const result = await generateSubtitles({
+        audioBase64,
+        fileName: 'voice-command.wav',
+      })
+
+      if (result.success && result.subtitles && result.subtitles.length > 0) {
+        const text = result.subtitles.map((s) => s.text).join('')
+        setTranscript(text)
+        setMode('idle')
+        executeCommand(text)
+      } else {
+        setError(result.error || '未识别到语音内容，请重试')
+        setMode('idle')
+      }
+    } catch (err) {
+      console.error('录音识别失败:', err)
+      setError('语音识别失败，请重试')
+      setMode('idle')
+    }
+  }, [announce, executeCommand])
 
   /** 大按钮单击操作（肢障用户友好） */
   const handleQuickAction = (action: string) => {
@@ -370,10 +326,10 @@ export default function PhysicalImpairedPage() {
   useEffect(() => {
     return () => {
       // 组件卸载时停止录音并释放麦克风
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop()
+      const recorder = wavRecorderRef.current
+      if (recorder && recorder.recording) {
+        recorder.stop().catch(() => {})
       }
-      streamRef.current?.getTracks().forEach((t) => t.stop())
       stopSpeaking()
     }
   }, [])
